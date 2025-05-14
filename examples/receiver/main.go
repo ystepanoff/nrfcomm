@@ -19,7 +19,7 @@ func main() {
 	}
 
 	// Initialize the radio
-	receiver.Initialize()
+	receiver.Initialise()
 
 	// Start listening for pairing requests
 	println("Waiting for pairing requests...")
