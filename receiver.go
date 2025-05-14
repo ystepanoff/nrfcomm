@@ -224,3 +224,109 @@ func (r *Receiver) SendAck(deviceID DeviceID) error {
 
 	return nil
 }
+
+func (r *Receiver) StartPairing() error {
+	wasListening := r.isListening
+	if !r.isListening {
+		r.isListening = true
+	}
+
+	startTime := time.Now().UnixMilli()
+
+	for {
+		if time.Now().UnixMilli()-startTime > pairingTimeout {
+			if !wasListening {
+				r.isListening = false
+			}
+			return ErrTimeout
+		}
+
+		packet := r.ReceivePacket()
+		if packet == nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		if packet.Type == packetTypePairing {
+			r.ProcessPacket(packet)
+
+			r.mu.Lock()
+			paired := len(r.pairedDevices) > 0
+			r.mu.Unlock()
+
+			if paired {
+				if !wasListening {
+					r.isListening = false
+				}
+				return nil
+			}
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func (r *Receiver) GetPairedDeviceID() DeviceID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id := range r.pairedDevices {
+		return id
+	}
+	return 0
+}
+
+func (r *Receiver) IsPairedDeviceConnected() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, device := range r.pairedDevices {
+		if device.IsAlive() {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Receiver) ReceiveData() ([]byte, error) {
+	if len(r.pairedDevices) == 0 {
+		return nil, ErrNotPaired
+	}
+
+	startTime := time.Now().UnixMilli()
+
+	for {
+		if time.Now().UnixMilli()-startTime > 5000 {
+			return nil, ErrTimeout
+		}
+
+		packet := r.ReceivePacket()
+		if packet == nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		r.ProcessPacket(packet)
+
+		if packet.Type == packetTypeData {
+			r.mu.Lock()
+			_, isPaired := r.pairedDevices[packet.SenderID]
+			r.mu.Unlock()
+
+			if isPaired {
+				return packet.Payload, nil
+			}
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func (r *Receiver) StartHeartbeatTask() {
+	go func() {
+		for {
+			r.CleanupDeadDevices()
+			time.Sleep(heartbeatInterval * time.Millisecond / 2)
+		}
+	}()
+}
