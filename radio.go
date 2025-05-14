@@ -1,8 +1,9 @@
 package nrfcomm
 
 import (
-	"device/nrf"
 	"errors"
+
+	"tinygo.org/x/device/nrf"
 )
 
 const (
