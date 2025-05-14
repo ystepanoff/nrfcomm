@@ -80,11 +80,6 @@ func (t *Transmitter) SendPacket(packetType byte, payload []byte) error {
 	for nrf.RADIO.EVENTS_END.Get() == 0 {
 	}
 
-	// Disable the radio
-	nrf.RADIO.TASKS_DISABLE.Set(1)
-	for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
-	}
-
 	return nil
 }
 
@@ -112,7 +107,7 @@ func (t *Transmitter) StartPairing(receiverID DeviceID) error {
 
 		packet := t.ReceivePacket()
 		if packet == nil {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
