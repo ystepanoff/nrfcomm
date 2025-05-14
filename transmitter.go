@@ -1,3 +1,5 @@
+//go:build tinygo || baremetal
+
 package nrfcomm
 
 import (
@@ -5,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"tinygo.org/x/device/nrf"
+	"device/nrf"
 )
 
 // Transmitter represents a radio transmitter device

@@ -1,5 +1,6 @@
 module github.com/ystepanoff/nrfcomm
 
-go 1.23.5
+go 1.21
 
-require tinygo.org/x/device v0.0.0-20220213155215-c873563f9ed5 // indirect
+// This is a TinyGo package that relies on the TinyGo compiler
+// and hardware-specific libraries
