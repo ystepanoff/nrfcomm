@@ -1,3 +1,5 @@
+//go:build tinygo || baremetal
+
 package main
 
 import (

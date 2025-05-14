@@ -1,9 +1,11 @@
+//go:build tinygo || baremetal
+
 package nrfcomm
 
 import (
 	"errors"
 
-	"tinygo.org/x/device/nrf"
+	"device/nrf"
 )
 
 const (
