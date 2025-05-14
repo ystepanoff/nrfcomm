@@ -5,7 +5,7 @@ import (
 	"time"
 	"unsafe"
 
-	"device/nrf"
+	"tinygo.org/x/device/nrf"
 )
 
 // Transmitter represents a radio transmitter device
