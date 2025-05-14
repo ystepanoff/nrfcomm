@@ -52,7 +52,7 @@ func main() {
 		return
 	}
 
-	// Initialize the radio
+	// Initialise the radio
 	transmitter.Initialise()
 
 	// Try to pair with a receiver (ID: 0x87654321)
@@ -120,7 +120,7 @@ func main() {
 		return
 	}
 
-	// Initialize the radio
+	// Initiasise the radio
 	receiver.Initialise()
 
 	// Start listening for pairing requests
