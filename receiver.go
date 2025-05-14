@@ -77,6 +77,7 @@ func (r *Receiver) ProcessPacket(packet *Packet) {
 
 	case packetTypeHeartbeat:
 		if isPaired {
+			println("heartbeat from", packet.SenderID)
 			device.UpdateLastSeen()
 		}
 
@@ -126,9 +127,9 @@ func (r *Receiver) ReceivePacket() *Packet {
 	for nrf.RADIO.EVENTS_END.Get() == 0 {
 	}
 
-	nrf.RADIO.TASKS_DISABLE.Set(1)
-	for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
-	}
+	// nrf.RADIO.TASKS_DISABLE.Set(1)
+	// for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
+	// }
 
 	return DecodePacket(r.buffer[:])
 }
@@ -276,6 +277,17 @@ func (r *Receiver) GetPairedDeviceID() DeviceID {
 		return id
 	}
 	return 0
+}
+
+func (r *Receiver) GetPairedDeviceIDs() []DeviceID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ids := make([]DeviceID, 0, len(r.pairedDevices))
+	for id := range r.pairedDevices {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (r *Receiver) IsPairedDeviceConnected() bool {

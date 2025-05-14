@@ -15,16 +15,16 @@ const (
 	DeviceTypeReceiver    DeviceType = 2
 )
 
-// Device represents a radio device
+// Device represents either a transmitter or receiver device in memory.
 type Device struct {
-	ID         DeviceID
-	Type       DeviceType
-	Address    uint32
-	Prefix     byte
-	Channel    uint8
-	LastSeen   int64
-	IsPaired   bool
+	ID      DeviceID
+	Address uint32
+	Prefix  byte
+	Channel uint8
+
 	PairingKey uint32
+	IsPaired   bool
+	LastSeen   int64 // unix milli
 }
 
 // Packet structure:
@@ -45,51 +45,19 @@ type Packet struct {
 	Payload  []byte
 }
 
-func NewTransmitter(id DeviceID) *Device {
-	return &Device{
-		ID:       id,
-		Type:     DeviceTypeTransmitter,
-		Address:  uint32(id & 0xFFFFFFFF),
-		Prefix:   byte((id >> 24) & 0xFF),
-		Channel:  DefaultChannel,
-		IsPaired: false,
-	}
-}
+const headerWithoutLen = packetHeaderSize - 1
 
-func NewReceiver(id DeviceID) *Device {
-	return &Device{
-		ID:       id,
-		Type:     DeviceTypeReceiver,
-		Address:  uint32(id & 0xFFFFFFFF),
-		Prefix:   byte((id >> 24) & 0xFF),
-		Channel:  DefaultChannel,
-		IsPaired: false,
-	}
-}
-
-// IsAlive checks if the device is still active based on last seen timestamp
-func (d *Device) IsAlive() bool {
-	if !d.IsPaired {
-		return false
-	}
-	return (time.Now().UnixMilli() - d.LastSeen) < deviceTimeout
-}
-
-func (d *Device) UpdateLastSeen() {
-	d.LastSeen = time.Now().UnixMilli()
-}
-
-// EncodePacket encodes a packet to bytes
 func EncodePacket(p *Packet) []byte {
-	totalLen := packetHeaderSize + len(p.Payload)
-	if totalLen > MaxPayloadSize {
-		totalLen = MaxPayloadSize
+	bodyLen := headerWithoutLen + len(p.Payload) // bytes after length byte
+	if bodyLen > MaxPayloadSize-1 {
+		bodyLen = MaxPayloadSize - 1
 	}
 
+	totalLen := bodyLen + 1 // include length byte
 	data := make([]byte, totalLen)
-	data[0] = byte(totalLen)
+	data[0] = byte(bodyLen)
 
-	// Sender ID
+	// Sender ID (4 bytes)
 	binary.LittleEndian.PutUint32(data[1:5], uint32(p.SenderID))
 
 	// Packet type
@@ -108,29 +76,58 @@ func EncodePacket(p *Packet) []byte {
 	return data
 }
 
-// DecodePacket decodes bytes to a packet
 func DecodePacket(data []byte) *Packet {
 	if len(data) < packetHeaderSize {
 		return nil
 	}
 
-	plen := data[0]
-	if plen == 0 || plen > MaxPayloadSize {
+	bodyLen := int(data[0])
+	if bodyLen == 0 || bodyLen > MaxPayloadSize-1 {
+		return nil
+	}
+
+	if bodyLen+1 > len(data) {
 		return nil
 	}
 
 	p := &Packet{
-		Length:   plen,
+		Length:   byte(bodyLen),
 		SenderID: DeviceID(binary.LittleEndian.Uint32(data[1:5])),
 		Type:     data[5],
 		Reserved: [2]byte{data[6], data[7]},
 	}
 
-	payloadLen := int(plen) - packetHeaderSize
+	payloadLen := bodyLen - headerWithoutLen
 	if payloadLen > 0 {
 		p.Payload = make([]byte, payloadLen)
 		copy(p.Payload, data[packetHeaderSize:packetHeaderSize+payloadLen])
 	}
 
 	return p
+}
+
+func newDevice(id DeviceID) *Device {
+	return &Device{
+		ID:       id,
+		Address:  0xE7E7E7E7,
+		Prefix:   0xE7,
+		Channel:  7,
+		LastSeen: time.Now().UnixMilli(),
+	}
+}
+
+func NewTransmitter(id DeviceID) *Device {
+	return newDevice(id)
+}
+
+func NewReceiver(id DeviceID) *Device {
+	return newDevice(id)
+}
+
+func (d *Device) UpdateLastSeen() {
+	d.LastSeen = time.Now().UnixMilli()
+}
+
+func (d *Device) IsAlive() bool {
+	return (time.Now().UnixMilli() - d.LastSeen) < deviceTimeout
 }
