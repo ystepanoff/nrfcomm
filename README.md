@@ -44,7 +44,7 @@ import (
 
 func main() {
 	// Create a new transmitter with a unique ID
-	transmitter := nrfcomm.NewRadioTransmitter(0x12345678)
+	transmitter := nrfcomm.NewTransmitter(0x12345678)
 
 	// Set custom channel (0-125, default is 7)
 	if err := transmitter.SetChannel(80); err != nil {
@@ -112,7 +112,7 @@ import (
 
 func main() {
 	// Create a new receiver with a unique ID
-	receiver := nrfcomm.NewRadioReceiver(0x87654321)
+	receiver := nrfcomm.NewReceiver(0x87654321)
 
 	// Set custom channel (0-125, default is 7)
 	if err := receiver.SetChannel(80); err != nil {
@@ -171,4 +171,17 @@ tinygo flash -target=nice_nano -size=short path/to/your/code
 
 ## License
 
-MIT 
+MIT
+
+## Package Structure
+
+The codebase is organized into several packages:
+
+- `nrfcomm` (root): Provides a simple façade over the lower-level packages
+- `protocol`: Core data structures (Packet, Device) and encoding/crypto helpers
+- `transport`: Higher-level radio logic (Transmitter, Receiver)
+- `driver`: Hardware-specific implementations
+  - `driver/nrf`: Actual NRF radio driver (for tinygo/baremetal)
+  - `driver/stub`: Mock driver for testing on the host
+
+The separation allows most of the code to be tested on the host without needing real hardware. 
