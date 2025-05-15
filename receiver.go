@@ -127,9 +127,9 @@ func (r *Receiver) ReceivePacket() *Packet {
 	for nrf.RADIO.EVENTS_END.Get() == 0 {
 	}
 
-	// nrf.RADIO.TASKS_DISABLE.Set(1)
-	// for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
-	// }
+	nrf.RADIO.TASKS_DISABLE.Set(1)
+	for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
+	}
 
 	return DecodePacket(r.buffer[:])
 }
