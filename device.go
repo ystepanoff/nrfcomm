@@ -111,7 +111,7 @@ func newDevice(id DeviceID) *Device {
 		ID:       id,
 		Address:  0xE7E7E7E7,
 		Prefix:   0xE7,
-		Channel:  7,
+		Channel:  80,
 		LastSeen: time.Now().UnixMilli(),
 	}
 }

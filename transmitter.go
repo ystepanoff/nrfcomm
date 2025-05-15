@@ -31,7 +31,7 @@ func NewRadioTransmitter(id DeviceID) *Transmitter {
 	return t
 }
 
-func (t *Transmitter) Initialize() {
+func (t *Transmitter) Initialise() {
 	StartHFCLK()
 	ConfigureRadio(t.device.Address, t.device.Prefix, t.device.Channel)
 }
@@ -78,6 +78,10 @@ func (t *Transmitter) SendPacket(packetType byte, payload []byte) error {
 	// Start one packet → END
 	nrf.RADIO.TASKS_START.Set(1)
 	for nrf.RADIO.EVENTS_END.Get() == 0 {
+	}
+
+	nrf.RADIO.TASKS_DISABLE.Set(1)
+	for nrf.RADIO.STATE.Get() != nrf.RADIO_STATE_STATE_Disabled {
 	}
 
 	return nil
