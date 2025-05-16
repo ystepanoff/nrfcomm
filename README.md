@@ -168,7 +168,7 @@ func main() {
 To compile and flash your code to a nice!nano board:
 
 ```bash
-tinygo flash -target=nice_nano -size=short path/to/your/code
+tinygo flash -target=nicenano -size=short path/to/your/code
 ```
 
 ## License
