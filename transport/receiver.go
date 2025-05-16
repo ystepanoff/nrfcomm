@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -13,7 +14,7 @@ type Receiver struct {
 	driver        RadioDriver
 	pairedDevices map[proto.DeviceID]*proto.Device
 	mu            sync.Mutex
-	callbacks     map[byte]func(*proto.Packet)
+	callbacks     map[byte]func(*proto.Frame)
 	isListening   bool
 }
 
@@ -22,7 +23,7 @@ func NewReceiverWithDriver(id proto.DeviceID, d RadioDriver) *Receiver {
 		device:        proto.NewReceiver(id),
 		driver:        d,
 		pairedDevices: make(map[proto.DeviceID]*proto.Device),
-		callbacks:     make(map[byte]func(*proto.Packet)),
+		callbacks:     make(map[byte]func(*proto.Frame)),
 	}
 }
 
@@ -31,81 +32,63 @@ func (r *Receiver) Initialise() {
 	_ = r.driver.Configure(r.device.Address, r.device.Prefix, r.device.Channel)
 }
 
-func (r *Receiver) RegisterCallback(ptype byte, cb func(*proto.Packet)) {
+func (r *Receiver) RegisterCallback(ptype byte, cb func(*proto.Frame)) {
 	r.mu.Lock()
 	r.callbacks[ptype] = cb
 	r.mu.Unlock()
 }
 
-func (r *Receiver) ProcessPacket(pkt *proto.Packet) {
-	if pkt == nil {
+func (r *Receiver) ProcessFrame(frame *proto.Frame) {
+	if frame == nil {
 		return
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	dev, paired := r.pairedDevices[pkt.SenderID]
+	dev, paired := r.pairedDevices[frame.SenderID]
 
-	switch pkt.Type {
-	case proto.PacketTypePairing:
-		if pkt.Payload != nil && len(pkt.Payload) >= 8 {
-			key := uint32(pkt.Payload[0]) | uint32(pkt.Payload[1])<<8 | uint32(pkt.Payload[2])<<16 | uint32(pkt.Payload[3])<<24
-			targetID := proto.DeviceID(uint32(pkt.Payload[4]) | uint32(pkt.Payload[5])<<8 | uint32(pkt.Payload[6])<<16 | uint32(pkt.Payload[7])<<24)
+	switch frame.Type {
+	case proto.FrameTypePairing:
+		log.Printf("[Receiver] Pairing Frame received\r\n")
+		log.Printf("[Receiver] Payload: %v\r\n", frame.Payload)
+		if len(frame.Payload) >= 8 {
+			key := uint32(frame.Payload[0]) | uint32(frame.Payload[1])<<8 | uint32(frame.Payload[2])<<16 | uint32(frame.Payload[3])<<24
+			targetID := proto.DeviceID(uint32(frame.Payload[4]) | uint32(frame.Payload[5])<<8 | uint32(frame.Payload[6])<<16 | uint32(frame.Payload[7])<<24)
 			if targetID == r.device.ID {
 				if dev == nil {
-					dev = proto.NewTransmitter(pkt.SenderID)
+					dev = proto.NewTransmitter(frame.SenderID)
 				}
 				dev.PairingKey = key
 				dev.IsPaired = true
 				dev.UpdateLastSeen()
-				r.pairedDevices[pkt.SenderID] = dev
-				_ = r.SendAck(pkt.SenderID)
+				r.pairedDevices[frame.SenderID] = dev
+				_ = r.SendAck(frame.SenderID, frame.Seq)
 			}
 		}
-	case proto.PacketTypeHeartbeat:
+	case proto.FrameTypeHeartbeat:
 		if paired {
 			dev.UpdateLastSeen()
+			log.Printf("[Receiver] Heartbeat received from %d (seq=%d)\r\n", frame.SenderID, frame.Seq)
 		}
-	case proto.PacketTypeData:
-		if paired && pkt.Payload != nil {
+	case proto.FrameTypeData:
+		if paired && frame.Payload != nil {
 			dev.UpdateLastSeen()
 
-			seqBytes := pkt.Reserved
+			// Send ACK immediately (no new goroutine to minimise allocations)
+			ackframe := &proto.Frame{
+				SenderID: r.device.ID,
+				Type:     proto.FrameTypeAck,
+				Seq:      frame.Seq,
+			}
+			_ = r.driver.Tx(proto.EncodeFrame(ackframe))
 
-			localDeviceID := r.device.ID
-			localDriver := r.driver
-			go func(senderID, responderID proto.DeviceID, seqData [2]byte, driver RadioDriver) {
-				seqDataCopy := [2]byte{seqData[0], seqData[1]}
+			// Log ACK sent (use sequence number bytes for clarity)
+			log.Printf("[Receiver] ACK sent for seq=%d\r\n", frame.Seq)
 
-				ackPkt := &proto.Packet{
-					SenderID: responderID,
-					Type:     proto.PacketTypeAck,
-					Reserved: [2]byte{0, 0},
-					Payload:  []byte{seqDataCopy[0], seqDataCopy[1]}, // Echo sequence number
-				}
-
-				data := proto.EncodePacket(ackPkt)
-				if len(data) >= proto.PacketHeaderSize {
-					_ = driver.Tx(data)
-				}
-			}(pkt.SenderID, localDeviceID, seqBytes, localDriver)
-
-			if callback, ok := r.callbacks[proto.PacketTypeData]; ok && callback != nil {
-				safePacket := &proto.Packet{
-					SenderID: pkt.SenderID,
-					Type:     pkt.Type,
-					Reserved: pkt.Reserved,
-				}
-
-				if pkt.Payload != nil {
-					safePacket.Payload = make([]byte, len(pkt.Payload))
-					copy(safePacket.Payload, pkt.Payload)
-				} else {
-					safePacket.Payload = make([]byte, 0)
-				}
-
-				callback(safePacket)
+			// Invoke callback directly using the same Frame to avoid extra allocations
+			if callback, ok := r.callbacks[proto.FrameTypeData]; ok && callback != nil {
+				callback(frame)
 			}
 		}
 	}
@@ -118,9 +101,9 @@ func (r *Receiver) Listen() {
 	r.isListening = true
 	go func() {
 		for r.isListening {
-			pkt := r.ReceivePacket(100 * time.Millisecond)
-			if pkt != nil {
-				r.ProcessPacket(pkt)
+			frame := r.ReceiveFrame(100 * time.Millisecond)
+			if frame != nil {
+				r.ProcessFrame(frame)
 			}
 		}
 	}()
@@ -128,12 +111,12 @@ func (r *Receiver) Listen() {
 
 func (r *Receiver) StopListening() { r.isListening = false }
 
-func (r *Receiver) ReceivePacket(timeout time.Duration) *proto.Packet {
+func (r *Receiver) ReceiveFrame(timeout time.Duration) *proto.Frame {
 	data, err := r.driver.Rx(timeout)
 	if err != nil {
 		return nil
 	}
-	return proto.DecodePacket(data)
+	return proto.DecodeFrame(data)
 }
 
 func (r *Receiver) SetChannel(ch uint8) error {
@@ -144,21 +127,21 @@ func (r *Receiver) SetChannel(ch uint8) error {
 	return r.driver.SetChannel(ch)
 }
 
-func (r *Receiver) SendAck(to proto.DeviceID) error {
+func (r *Receiver) SendAck(to proto.DeviceID, seq uint32) error {
 	pl := make([]byte, 4)
 	for i := 0; i < 4; i++ {
 		pl[i] = byte(r.device.ID >> (i * 8))
 	}
 
-	ackPacket := &proto.Packet{
+	ackFrame := &proto.Frame{
 		SenderID: r.device.ID,
-		Type:     proto.PacketTypeAck,
-		Reserved: [2]byte{0, 0},
+		Type:     proto.FrameTypeAck,
+		Seq:      seq,
 		Payload:  pl,
 	}
 
-	data := proto.EncodePacket(ackPacket)
-	if len(data) < proto.PacketHeaderSize {
+	data := proto.EncodeFrame(ackFrame)
+	if len(data) < proto.FrameHeaderSize {
 		return proto.ErrInvalidPayload
 	}
 
@@ -172,9 +155,9 @@ func (r *Receiver) StartPairing() error {
 	}
 	deadline := time.Now().Add(proto.PairingTimeout * time.Millisecond)
 	for time.Now().Before(deadline) {
-		pkt := r.ReceivePacket(100 * time.Millisecond)
-		if pkt != nil && pkt.Type == proto.PacketTypePairing {
-			r.ProcessPacket(pkt)
+		frame := r.ReceiveFrame(100 * time.Millisecond)
+		if frame != nil && frame.Type == proto.FrameTypePairing {
+			r.ProcessFrame(frame)
 			r.mu.Lock()
 			paired := len(r.pairedDevices) > 0
 			r.mu.Unlock()
@@ -222,19 +205,11 @@ func (r *Receiver) CleanupDeadDevices() {
 
 	for id, device := range r.pairedDevices {
 		if (now - device.LastSeen) > proto.DeviceTimeout {
+			log.Printf("[Receiver] Device %d timed out\r\n", id)
 			device.IsPaired = false
 			delete(r.pairedDevices, id)
 		}
 	}
-}
-
-func (r *Receiver) StartCleanupTask() {
-	go func() {
-		for {
-			time.Sleep(proto.DeviceTimeout * time.Millisecond / 2)
-			r.CleanupDeadDevices()
-		}
-	}()
 }
 
 func (r *Receiver) GetPairedDeviceID() proto.DeviceID {
@@ -282,27 +257,27 @@ func (r *Receiver) ReceiveData() ([]byte, error) {
 			return nil, proto.ErrTimeout
 		}
 
-		packet := r.ReceivePacket(100 * time.Millisecond)
-		if packet == nil {
+		Frame := r.ReceiveFrame(100 * time.Millisecond)
+		if Frame == nil {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
-		if packet.Payload == nil {
+		if Frame.Payload == nil {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
-		r.ProcessPacket(packet)
+		r.ProcessFrame(Frame)
 
-		if packet.Type == proto.PacketTypeData {
+		if Frame.Type == proto.FrameTypeData {
 			r.mu.Lock()
-			_, isPaired := r.pairedDevices[packet.SenderID]
+			_, isPaired := r.pairedDevices[Frame.SenderID]
 			r.mu.Unlock()
 
 			if isPaired {
-				dataCopy := make([]byte, len(packet.Payload))
-				copy(dataCopy, packet.Payload)
+				dataCopy := make([]byte, len(Frame.Payload))
+				copy(dataCopy, Frame.Payload)
 				return dataCopy, nil
 			}
 		}

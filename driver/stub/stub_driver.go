@@ -12,42 +12,37 @@ import (
 
 // Driver implements a mock radio driver for host-side testing
 type Driver struct {
-	mu      sync.Mutex
-	rxQueue [][]byte
-	txLog   [][]byte
+	mu    sync.Mutex
+	rxBuf ringBuffer
+	txBuf ringBuffer
 }
 
-// New creates a new stub driver for testing
 func New() transport.RadioDriver { return &Driver{} }
 
 func (d *Driver) StartHFCLK()                                                {}
 func (d *Driver) Configure(address uint32, prefix byte, channel uint8) error { return nil }
 func (d *Driver) SetChannel(channel uint8) error                             { return nil }
 
-// Tx records transmitted packets for later inspection
 func (d *Driver) Tx(data []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	pkt := make([]byte, len(data))
-	copy(pkt, data)
-	d.txLog = append(d.txLog, pkt)
+	frame := make([]byte, len(data))
+	copy(frame, data)
+	d.txBuf.push(frame)
 	return nil
 }
 
-// Rx returns queued packets or times out
 func (d *Driver) Rx(timeout time.Duration) ([]byte, error) {
 	deadline := time.Now().Add(timeout)
 	for {
 		d.mu.Lock()
-		if len(d.rxQueue) > 0 {
-			pkt := d.rxQueue[0]
-			d.rxQueue = d.rxQueue[1:]
-			d.mu.Unlock()
-			out := make([]byte, len(pkt))
-			copy(out, pkt)
+		frame, ok := d.rxBuf.pop()
+		d.mu.Unlock()
+		if ok {
+			out := make([]byte, len(frame))
+			copy(out, frame)
 			return out, nil
 		}
-		d.mu.Unlock()
 
 		if time.Now().After(deadline) {
 			return nil, proto.ErrTimeout
@@ -56,24 +51,62 @@ func (d *Driver) Rx(timeout time.Duration) ([]byte, error) {
 	}
 }
 
-// InjectRx queues packets to be returned by the next Rx() call
 func (d *Driver) InjectRx(data []byte) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	pkt := make([]byte, len(data))
-	copy(pkt, data)
-	d.rxQueue = append(d.rxQueue, pkt)
+	frame := make([]byte, len(data))
+	copy(frame, data)
+	d.rxBuf.push(frame)
 }
 
-// GetTxLog returns a copy of the transmitted packets log
 func (d *Driver) GetTxLog() [][]byte {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	out := make([][]byte, len(d.txLog))
-	for i, p := range d.txLog {
+	return d.txBuf.snapshot()
+}
+
+const ringCapacity = 64
+
+type ringBuffer struct {
+	data       [ringCapacity][]byte
+	head, tail int // head = next pop, tail = next push
+	count      int
+}
+
+func (rb *ringBuffer) push(frame []byte) {
+	if rb.count == ringCapacity {
+		// Overwrite the oldest when buffer is full to keep memory bounded
+		rb.data[rb.tail] = nil
+		rb.head = (rb.head + 1) % ringCapacity
+		rb.count--
+	}
+	rb.data[rb.tail] = frame
+	rb.tail = (rb.tail + 1) % ringCapacity
+	rb.count++
+}
+
+func (rb *ringBuffer) pop() ([]byte, bool) {
+	if rb.count == 0 {
+		return nil, false
+	}
+	frame := rb.data[rb.head]
+	rb.data[rb.head] = nil
+	rb.head = (rb.head + 1) % ringCapacity
+	rb.count--
+	return frame, true
+}
+
+func (rb *ringBuffer) snapshot() [][]byte {
+	out := make([][]byte, rb.count)
+	idx := 0
+	i := rb.head
+	for c := 0; c < rb.count; c++ {
+		p := rb.data[i]
 		cp := make([]byte, len(p))
 		copy(cp, p)
-		out[i] = cp
+		out[idx] = cp
+		idx++
+		i = (i + 1) % ringCapacity
 	}
 	return out
 }

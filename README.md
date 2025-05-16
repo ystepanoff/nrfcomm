@@ -7,7 +7,7 @@ A 2.4GHz radio communication interface for nice!nano boards using TinyGo.
 * Channel selection (0-125)
 * Device pairing with ACK support
 * Heartbeat monitoring
-* Data packet transmission/reception
+* Data Frame transmission/reception
 * Automatic connection management
 
 ## Important: TinyGo Only
@@ -43,6 +43,7 @@ import (
 )
 
 func main() {
+	time.Sleep(3 * time.Second)
 	// Create a new transmitter with a unique ID
 	transmitter := nrfcomm.NewTransmitter(0x12345678)
 
@@ -92,7 +93,7 @@ func main() {
 		}
 
 		counter++
-		time.Sleep(1 * time.Second)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 ```
@@ -111,6 +112,7 @@ import (
 )
 
 func main() {
+	time.Sleep(3 * time.Second)
 	// Create a new receiver with a unique ID
 	receiver := nrfcomm.NewReceiver(0x87654321)
 
@@ -143,13 +145,13 @@ func main() {
 		data, err := receiver.ReceiveData()
 		if err != nil {
 			println("Failed to receive data:", err.Error())
-			
+
 			// Check if device is still connected
 			if !receiver.IsPairedDeviceConnected() {
 				println("Device disconnected!")
 				// You could attempt to re-pair here or take other action
 			}
-			
+
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -172,16 +174,3 @@ tinygo flash -target=nice_nano -size=short path/to/your/code
 ## License
 
 MIT
-
-## Package Structure
-
-The codebase is organized into several packages:
-
-- `nrfcomm` (root): Provides a simple façade over the lower-level packages
-- `protocol`: Core data structures (Packet, Device) and encoding/crypto helpers
-- `transport`: Higher-level radio logic (Transmitter, Receiver)
-- `driver`: Hardware-specific implementations
-  - `driver/nrf`: Actual NRF radio driver (for tinygo/baremetal)
-  - `driver/stub`: Mock driver for testing on the host
-
-The separation allows most of the code to be tested on the host without needing real hardware. 

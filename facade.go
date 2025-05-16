@@ -14,7 +14,7 @@ import (
 type (
 	DeviceID    = protocol.DeviceID
 	DeviceType  = protocol.DeviceType
-	Packet      = protocol.Packet
+	Frame       = protocol.Frame
 	Transmitter = transport.Transmitter
 	Receiver    = transport.Receiver
 )
@@ -32,8 +32,8 @@ const (
 	DeviceTypeTransmitter = protocol.DeviceTypeTransmitter
 	DeviceTypeReceiver    = protocol.DeviceTypeReceiver
 
-	PacketTypePairing   = protocol.PacketTypePairing
-	PacketTypeData      = protocol.PacketTypeData
-	PacketTypeHeartbeat = protocol.PacketTypeHeartbeat
-	PacketTypeAck       = protocol.PacketTypeAck
+	FrameTypePairing   = protocol.FrameTypePairing
+	FrameTypeData      = protocol.FrameTypeData
+	FrameTypeHeartbeat = protocol.FrameTypeHeartbeat
+	FrameTypeAck       = protocol.FrameTypeAck
 )

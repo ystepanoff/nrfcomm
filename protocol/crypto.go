@@ -8,7 +8,7 @@ import (
 )
 
 // GeneratePairingKey returns a cryptographically random 32-bit key.
-// If crypto/rand fails (rare on host), falls back to math/rand.
+// If crypto/rand fails, falls back to math/rand.
 func GeneratePairingKey() uint32 {
 	var b [4]byte
 	if _, err := crand.Read(b[:]); err == nil {

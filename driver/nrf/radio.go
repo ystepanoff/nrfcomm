@@ -38,7 +38,7 @@ func ConfigureRadio(address uint32, prefix byte, channel uint8) error {
 			(0 << nrf.RADIO_PCNF0_S1LEN_Pos))
 
 	nrf.RADIO.PCNF1.Set(
-		(proto.MaxPayloadSize << nrf.RADIO_PCNF1_MAXLEN_Pos) |
+		(proto.MaxFrameSize << nrf.RADIO_PCNF1_MAXLEN_Pos) |
 			(0 << nrf.RADIO_PCNF1_STATLEN_Pos) |
 			(3 << nrf.RADIO_PCNF1_BALEN_Pos) |
 			(nrf.RADIO_PCNF1_ENDIAN_Little << nrf.RADIO_PCNF1_ENDIAN_Pos))
