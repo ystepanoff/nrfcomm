@@ -15,7 +15,7 @@ import (
 // Driver provides a RadioDriver backed by the real NRF peripheral registers.
 // It keeps an internal buffer for Frame TX/RX operations.
 type Driver struct {
-	buffer [proto.MaxFrameSize]byte
+	buffer [proto.MaxFrameSize + 1]byte
 }
 
 func New() transport.RadioDriver { return &Driver{} }
@@ -35,6 +35,9 @@ func (d *Driver) SetChannel(channel uint8) error {
 }
 
 func (d *Driver) Tx(data []byte) error {
+	if len(data) > proto.MaxFrameSize {
+		return proto.ErrInvalidPayload
+	}
 	copy(d.buffer[:], data)
 	nrf.RADIO.PACKETPTR.Set(uint32(uintptr(unsafe.Pointer(&d.buffer[0]))))
 	nrf.RADIO.EVENTS_READY.Set(0)

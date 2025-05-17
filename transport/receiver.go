@@ -56,7 +56,7 @@ func (r *Receiver) ProcessFrame(frame *proto.Frame) {
 			key := uint32(frame.Payload[0]) | uint32(frame.Payload[1])<<8 | uint32(frame.Payload[2])<<16 | uint32(frame.Payload[3])<<24
 			targetID := proto.DeviceID(uint32(frame.Payload[4]) | uint32(frame.Payload[5])<<8 | uint32(frame.Payload[6])<<16 | uint32(frame.Payload[7])<<24)
 			if targetID == r.device.ID {
-				if dev == nil {
+				if !paired {
 					dev = proto.NewTransmitter(frame.SenderID)
 				}
 				dev.PairingKey = key
@@ -105,6 +105,7 @@ func (r *Receiver) Listen() {
 			if frame != nil {
 				r.ProcessFrame(frame)
 			}
+			time.Sleep(1 * time.Millisecond)
 		}
 	}()
 }
@@ -197,10 +198,7 @@ func (r *Receiver) GetPairedDevices() []*proto.Device {
 	return devices
 }
 
-func (r *Receiver) CleanupDeadDevices() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+func (r *Receiver) CleanupTimedOutDevices() {
 	now := time.Now().UnixMilli()
 
 	for id, device := range r.pairedDevices {
@@ -284,11 +282,13 @@ func (r *Receiver) ReceiveData() ([]byte, error) {
 	}
 }
 
-func (r *Receiver) StartHeartbeatTask() {
+func (r *Receiver) StartCleanupTask() {
 	go func() {
-		for {
-			r.CleanupDeadDevices()
-			time.Sleep(proto.HeartbeatInterval * time.Millisecond / 2)
+		ticker := time.NewTicker(proto.HeartbeatInterval * time.Millisecond / 2)
+		defer ticker.Stop()
+		for range ticker.C {
+			r.CleanupTimedOutDevices()
 		}
+		time.Sleep(1 * time.Millisecond)
 	}()
 }
