@@ -9,6 +9,7 @@ A 2.4GHz radio communication interface for nice!nano boards using TinyGo.
 * Heartbeat monitoring
 * Data Frame transmission/reception
 * Automatic connection management
+* Multi-device pairing support
 
 ## Important: TinyGo Only
 
@@ -161,7 +162,77 @@ func main() {
 		println("Received data packet:", counter)
 	}
 }
+
+### Continuous Pairing Mode (Multi-Device) Example
+
+The receiver can be configured to remain in a listening state indefinitely, allowing it to pair with multiple transmitters that join over time.
+
+```go
+//go:build tinygo || baremetal
+
+package main
+
+import (
+	"time"
+
+	"github.com/ystepanoff/nrfcomm"
+)
+
+func main() {
+	time.Sleep(3 * time.Second)
+	
+	// Create a new receiver with a unique ID
+	receiver := nrfcomm.NewReceiver(0x87654321)
+	
+	// Initialise the radio
+	receiver.Initialise()
+	
+	// Register a callback to receive data from any paired device
+	receiver.RegisterCallback(nrfcomm.FrameTypeData, func(frame *nrfcomm.Frame) {
+		if len(frame.Payload) > 0 {
+			// Convert payload bytes to a counter value
+			counter := uint32(0)
+			if len(frame.Payload) >= 4 {
+				counter = binary.LittleEndian.Uint32(frame.Payload)
+			} else {
+				counter = uint32(frame.Payload[0])
+			}
+			
+			// Print the received data along with the sender's ID
+			println("Received data:", counter, "from device:", frame.SenderID)
+		}
+	})
+	
+	// Start continuous listening mode - will accept pairing from any matching device ID
+	println("Starting continuous listening mode...")
+	receiver.Listen()
+	
+	// Start the heartbeat and cleanup tasks
+	receiver.StartCleanupTask()
+	
+	// Keep the program running
+	for {
+		// Periodically report connected devices
+		devices := receiver.GetPairedDeviceIDs()
+		println("Currently paired devices:", len(devices))
+		for i, deviceID := range devices {
+			println("Device", i, ":", deviceID)
+		}
+		
+		time.Sleep(1 * time.Minute)
+	}
+}
 ```
+
+In this mode, the receiver:
+
+1. Starts continuous listening with `Listen()` instead of `StartPairing()`
+2. Processes incoming pairing requests automatically from any device
+3. Uses the `RegisterCallback` approach to receive data from all paired devices
+4. Keeps track of multiple paired devices with `GetPairedDeviceIDs()`
+5. Runs a periodic cleanup task that removes devices that haven't sent heartbeats recently
+
+When a transmitter attempts to pair with the receiver's ID, the pairing will succeed automatically and data transmission can begin immediately.
 
 ## Building and Flashing
 

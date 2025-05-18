@@ -120,16 +120,6 @@ func (t *Transmitter) SendData(data []byte) error {
 	return t.SendFrame(proto.FrameTypeData, data)
 }
 
-func (t *Transmitter) StartHeartbeatTask() {
-	go func() {
-		ticker := time.NewTicker(proto.HeartbeatInterval * time.Millisecond)
-		defer ticker.Stop()
-		for range ticker.C {
-			_ = t.SendHeartbeat()
-		}
-	}()
-}
-
 // SendDataReliable sends data with acknowledgment and automatic retries.
 // It will attempt to send the Frame up to maxRetries times, waiting for an ACK
 // with the matching sequence number after each attempt.
@@ -190,4 +180,16 @@ func (t *Transmitter) SendDataReliable(data []byte, maxRetries int) error {
 	}
 
 	return proto.ErrTimeout
+}
+
+func (t *Transmitter) StartHeartbeatTask() {
+	go func() {
+		log.Printf("[Transmitter] Heartbeat task started\r\n")
+		_ = t.SendHeartbeat() // send first immediately
+		ticker := time.NewTicker(proto.HeartbeatInterval * time.Millisecond)
+		defer ticker.Stop()
+		for range ticker.C {
+			_ = t.SendHeartbeat()
+		}
+	}()
 }

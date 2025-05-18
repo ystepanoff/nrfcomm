@@ -16,11 +16,11 @@ const (
 	// Header consists of: SenderID(4)+Type(1)+Seq(4) = 9 plus Length field = 10 bytes before payload
 	FrameHeaderSize = LengthFieldSize + 4 + 1 + SequenceFieldSize // 10 bytes
 
-	// Application-level payload allowance
-	MaxPayloadSize = MaxFrameSize - FrameHeaderSize - CRCSize - TerminalSize
-
 	// Total maximum Frame length on air (including length, CRC, Terminal)
 	MaxFrameSize = 128
+
+	// Application-level payload allowance
+	MaxPayloadSize = MaxFrameSize - FrameHeaderSize - CRCSize - TerminalSize
 
 	// RF defaults (can be overridden per device)
 	DefaultChannel = 7
