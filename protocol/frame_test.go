@@ -257,7 +257,7 @@ func TestDecodeInvalidFrames(t *testing.T) {
 }
 
 func TestFrameSizeLimit(t *testing.T) {
-	// Create frame with oversized payload
+	// Create a frame with oversized payload
 	frame := &Frame{
 		SenderID: 0xBEEF,
 		Type:     FrameTypeData,

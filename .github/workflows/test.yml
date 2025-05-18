@@ -1,0 +1,112 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.20', '1.21', '1.22', '1.23']
+        tinygo-version: ['0.37.0']
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Cache TinyGo (Windows)
+      if: matrix.os == 'windows-latest'
+      id: cache-tinygo-windows
+      uses: actions/cache@v3
+      with:
+        path: C:\tinygo
+        key: ${{ runner.os }}-tinygo-${{ matrix.tinygo-version }}
+
+    - name: Install TinyGo (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        wget https://github.com/tinygo-org/tinygo/releases/download/v${{ matrix.tinygo-version }}/tinygo_${{ matrix.tinygo-version }}_amd64.deb
+        sudo dpkg -i tinygo_${{ matrix.tinygo-version }}_amd64.deb
+
+    - name: Install TinyGo (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install tinygo
+
+    - name: Install TinyGo (Windows)
+      if: matrix.os == 'windows-latest' && steps.cache-tinygo-windows.outputs.cache-hit != 'true'
+      run: |
+        $version = "${{ matrix.tinygo-version }}"
+        $url = "https://github.com/tinygo-org/tinygo/releases/download/v${version}/tinygo${version}.windows-amd64.zip"
+        Invoke-WebRequest -Uri $url -OutFile tinygo.zip
+        Expand-Archive -Path tinygo.zip -DestinationPath C:\
+        
+    - name: Add TinyGo to PATH (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "C:\tinygo\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Run tests
+      run: |
+        go test -v ./protocol/...
+        go test -v ./transport/...
+        
+    - name: Generate coverage report
+      run: |
+        go test -coverprofile=coverage.out ./protocol/... ./transport/...
+        go tool cover -func=coverage.out
+        
+    - name: TinyGo build check (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        tinygo build -target=pca10056 -o=/dev/null ./examples/transmitter
+        tinygo build -target=pca10056 -o=/dev/null ./examples/receiver
+        
+    - name: TinyGo build check (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        tinygo build -target=pca10056 -o=NUL ./examples/transmitter
+        tinygo build -target=pca10056 -o=NUL ./examples/receiver
+        
+    - name: Check code formatting (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        # Ensure code follows Go formatting conventions
+        test -z "$(gofmt -d -s .)" || (gofmt -d -s . && exit 1)
+        
+    - name: Check code formatting (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Ensure code follows Go formatting conventions
+        $output = $(gofmt -d -s .)
+        if ($output) {
+          echo $output
+          exit 1
+        }
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest 
