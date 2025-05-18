@@ -82,21 +82,11 @@ jobs:
         tinygo build -target=pca10056 -o=NUL ./examples/transmitter
         tinygo build -target=pca10056 -o=NUL ./examples/receiver
         
-    - name: Check code formatting (Linux/macOS)
-      if: matrix.os != 'windows-latest'
+    - name: Check code formatting
+      if: matrix.os == 'ubuntu-latest'
       run: |
         # Ensure code follows Go formatting conventions
         test -z "$(gofmt -d -s .)" || (gofmt -d -s . && exit 1)
-        
-    - name: Check code formatting (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        # Ensure code follows Go formatting conventions
-        $output = $(gofmt -d -s .)
-        if ($output) {
-          echo $output
-          exit 1
-        }
 
   lint:
     name: lint
@@ -113,4 +103,4 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: latest 
+          version: latest
