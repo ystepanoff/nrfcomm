@@ -41,7 +41,10 @@ jobs:
     - name: Install TinyGo (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install tinygo
+        wget https://github.com/tinygo-org/tinygo/releases/download/v${{ matrix.tinygo-version }}/tinygo${{ matrix.tinygo-version }}.darwin-amd64.tar.gz
+        mkdir -p /tmp/tinygo
+        tar -xzf tinygo${{ matrix.tinygo-version }}.darwin-amd64.tar.gz -C /tmp
+        echo "/tmp/tinygo/bin" >> $GITHUB_PATH
 
     - name: Install TinyGo (Windows)
       if: matrix.os == 'windows-latest' && steps.cache-tinygo-windows.outputs.cache-hit != 'true'
