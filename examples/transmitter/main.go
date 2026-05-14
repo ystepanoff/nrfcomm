@@ -13,12 +13,12 @@ func main() {
 
 	transmitter := nrfcomm.NewTransmitter(0x12345678)
 
+	transmitter.Initialise()
+
 	if err := transmitter.SetChannel(80); err != nil {
 		println("Failed to set channel:", err.Error())
 		return
 	}
-
-	transmitter.Initialise()
 
 	println("Attempting to pair with receiver 0x87654321...")
 	err := transmitter.StartPairing(0x87654321)

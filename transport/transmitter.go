@@ -2,6 +2,7 @@ package transport
 
 import (
 	"log"
+	"sync/atomic"
 	"time"
 
 	proto "github.com/ystepanoff/nrfcomm/protocol"
@@ -11,7 +12,7 @@ import (
 type Transmitter struct {
 	device     *proto.Device
 	driver     RadioDriver
-	seq        uint32
+	seq        atomic.Uint32
 	receiver   proto.DeviceID
 	pairingKey uint32
 }
@@ -48,8 +49,7 @@ func (t *Transmitter) SendFrame(FrameType byte, payload []byte) error {
 		return proto.ErrInvalidPayload
 	}
 
-	seq := t.seq
-	t.seq++
+	seq := t.seq.Add(1) - 1
 
 	frame := &proto.Frame{
 		SenderID: t.device.ID,
@@ -79,7 +79,7 @@ func (t *Transmitter) StartPairing(receiverID proto.DeviceID) error {
 	t.receiver = receiverID
 
 	// remember sequence number that will be used in this pairing Frame
-	seq := t.seq
+	seq := t.seq.Load()
 
 	if err := t.SendFrame(proto.FrameTypePairing, buf); err != nil {
 		return err
@@ -91,12 +91,9 @@ func (t *Transmitter) StartPairing(receiverID proto.DeviceID) error {
 		if frame == nil {
 			continue
 		}
-		if frame.Type == proto.FrameTypeAck && frame.Seq == seq && len(frame.Payload) >= 4 {
-			sid := proto.DeviceID(uint32(frame.Payload[0]) | uint32(frame.Payload[1])<<8 | uint32(frame.Payload[2])<<16 | uint32(frame.Payload[3])<<24)
-			if sid == receiverID {
-				t.device.IsPaired = true
-				return nil
-			}
+		if frame.Type == proto.FrameTypeAck && frame.Seq == seq && frame.SenderID == receiverID {
+			t.device.IsPaired = true
+			return nil
 		}
 	}
 	return proto.ErrTimeout
@@ -108,7 +105,7 @@ func (t *Transmitter) SendHeartbeat() error {
 	}
 	err := t.SendFrame(proto.FrameTypeHeartbeat, nil)
 	if err == nil {
-		log.Printf("[Transmitter] Heartbeat sent (seq=%d)\r\n", t.seq-1)
+		log.Printf("[Transmitter] Heartbeat sent (seq=%d)\r\n", t.seq.Load()-1)
 	}
 	return err
 }
@@ -136,8 +133,7 @@ func (t *Transmitter) SendDataReliable(data []byte, maxRetries int) error {
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
 
-	seq := t.seq
-	t.seq++
+	seq := t.seq.Add(1) - 1
 
 	Frame := &proto.Frame{
 		SenderID: t.device.ID,
@@ -160,7 +156,7 @@ func (t *Transmitter) SendDataReliable(data []byte, maxRetries int) error {
 		deadline := time.Now().Add(200 * time.Millisecond)
 		for time.Now().Before(deadline) {
 			frame := t.ReceiveFrame(20 * time.Millisecond)
-			if frame == nil || frame.Payload == nil {
+			if frame == nil {
 				time.Sleep(10 * time.Millisecond)
 				continue
 			}

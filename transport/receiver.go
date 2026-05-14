@@ -3,6 +3,7 @@ package transport
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	proto "github.com/ystepanoff/nrfcomm/protocol"
@@ -15,7 +16,7 @@ type Receiver struct {
 	pairedDevices map[proto.DeviceID]*proto.Device
 	mu            sync.Mutex
 	callbacks     map[byte]func(*proto.Frame)
-	isListening   bool
+	isListening   atomic.Bool
 }
 
 func NewReceiverWithDriver(id proto.DeviceID, d RadioDriver) *Receiver {
@@ -72,21 +73,12 @@ func (r *Receiver) ProcessFrame(frame *proto.Frame) {
 			log.Printf("[Receiver] Heartbeat received from %d (seq=%d)\r\n", frame.SenderID, frame.Seq)
 		}
 	case proto.FrameTypeData:
-		if paired && frame.Payload != nil {
+		if paired {
 			dev.UpdateLastSeen()
 
-			// Send ACK immediately (no new goroutine to minimise allocations)
-			ackframe := &proto.Frame{
-				SenderID: r.device.ID,
-				Type:     proto.FrameTypeAck,
-				Seq:      frame.Seq,
-			}
-			_ = r.driver.Tx(proto.EncodeFrame(ackframe))
-
-			// Log ACK sent (use sequence number bytes for clarity)
+			_ = r.SendAck(frame.SenderID, frame.Seq)
 			log.Printf("[Receiver] ACK sent for seq=%d\r\n", frame.Seq)
 
-			// Invoke callback directly using the same Frame to avoid extra allocations
 			if callback, ok := r.callbacks[proto.FrameTypeData]; ok && callback != nil {
 				callback(frame)
 			}
@@ -95,12 +87,11 @@ func (r *Receiver) ProcessFrame(frame *proto.Frame) {
 }
 
 func (r *Receiver) Listen() {
-	if r.isListening {
+	if !r.isListening.CompareAndSwap(false, true) {
 		return
 	}
-	r.isListening = true
 	go func() {
-		for r.isListening {
+		for r.isListening.Load() {
 			frame := r.ReceiveFrame(100 * time.Millisecond)
 			if frame != nil {
 				r.ProcessFrame(frame)
@@ -110,7 +101,7 @@ func (r *Receiver) Listen() {
 	}()
 }
 
-func (r *Receiver) StopListening() { r.isListening = false }
+func (r *Receiver) StopListening() { r.isListening.Store(false) }
 
 func (r *Receiver) ReceiveFrame(timeout time.Duration) *proto.Frame {
 	data, err := r.driver.Rx(timeout)
@@ -129,49 +120,34 @@ func (r *Receiver) SetChannel(ch uint8) error {
 }
 
 func (r *Receiver) SendAck(to proto.DeviceID, seq uint32) error {
-	pl := make([]byte, 4)
-	for i := 0; i < 4; i++ {
-		pl[i] = byte(r.device.ID >> (i * 8))
-	}
-
 	ackFrame := &proto.Frame{
 		SenderID: r.device.ID,
 		Type:     proto.FrameTypeAck,
 		Seq:      seq,
-		Payload:  pl,
 	}
-
-	data := proto.EncodeFrame(ackFrame)
-	if len(data) < proto.FrameHeaderSize {
-		return proto.ErrInvalidPayload
-	}
-
-	return r.driver.Tx(data)
+	return r.driver.Tx(proto.EncodeFrame(ackFrame))
 }
 
 func (r *Receiver) StartPairing() error {
-	wasListening := r.isListening
-	if !r.isListening {
-		r.isListening = true
-	}
 	deadline := time.Now().Add(proto.PairingTimeout * time.Millisecond)
+	listening := r.isListening.Load()
+
 	for time.Now().Before(deadline) {
-		frame := r.ReceiveFrame(100 * time.Millisecond)
-		if frame != nil && frame.Type == proto.FrameTypePairing {
-			r.ProcessFrame(frame)
-			r.mu.Lock()
-			paired := len(r.pairedDevices) > 0
-			r.mu.Unlock()
-			if paired {
-				if !wasListening {
-					r.isListening = false
-				}
-				return nil
+		if !listening {
+			frame := r.ReceiveFrame(100 * time.Millisecond)
+			if frame != nil && frame.Type == proto.FrameTypePairing {
+				r.ProcessFrame(frame)
 			}
+		} else {
+			time.Sleep(10 * time.Millisecond)
 		}
-	}
-	if !wasListening {
-		r.isListening = false
+
+		r.mu.Lock()
+		paired := len(r.pairedDevices) > 0
+		r.mu.Unlock()
+		if paired {
+			return nil
+		}
 	}
 	return proto.ErrTimeout
 }
@@ -200,6 +176,9 @@ func (r *Receiver) GetPairedDevices() []*proto.Device {
 
 func (r *Receiver) CleanupTimedOutDevices() {
 	now := time.Now().UnixMilli()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	for id, device := range r.pairedDevices {
 		if (now - device.LastSeen) > proto.DeviceTimeout {
@@ -261,11 +240,6 @@ func (r *Receiver) ReceiveData() ([]byte, error) {
 			continue
 		}
 
-		if Frame.Payload == nil {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-
 		r.ProcessFrame(Frame)
 
 		if Frame.Type == proto.FrameTypeData {
@@ -289,6 +263,5 @@ func (r *Receiver) StartCleanupTask() {
 		for range ticker.C {
 			r.CleanupTimedOutDevices()
 		}
-		time.Sleep(1 * time.Millisecond)
 	}()
 }
