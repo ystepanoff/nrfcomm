@@ -158,6 +158,9 @@ func main() {
 		}
 
 		// Process received data (in this example, interpret as a counter)
+		if len(data) < 4 {
+			continue
+		}
 		counter := uint32(data[0]) | (uint32(data[1]) << 8) | (uint32(data[2]) << 16) | (uint32(data[3]) << 24)
 		println("Received data packet:", counter)
 	}
@@ -173,6 +176,7 @@ The receiver can be configured to remain in a listening state indefinitely, allo
 package main
 
 import (
+	"encoding/binary"
 	"time"
 
 	"github.com/ystepanoff/nrfcomm"
