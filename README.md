@@ -25,7 +25,13 @@ This package uses hardware-specific features only available through TinyGo. It w
 In your TinyGo project:
 
 ```bash
-go get github.com/ystepanoff/nrfcomm
+go get github.com/ystepanoff/nrfcomm@v0.1.0
+```
+
+Or pull the latest tagged release:
+
+```bash
+go get github.com/ystepanoff/nrfcomm@latest
 ```
 
 ## Usage

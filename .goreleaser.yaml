@@ -1,0 +1,53 @@
+version: 2
+
+project_name: nrfcomm
+
+before:
+  hooks:
+    - go mod tidy
+
+# This is a TinyGo library — no Go binaries to build.
+builds:
+  - skip: true
+
+# Publish a source tarball/zip alongside the GitHub release.
+source:
+  enabled: true
+  format: tar.gz
+  name_template: "{{ .ProjectName }}-{{ .Version }}-source"
+
+release:
+  github:
+    owner: ystepanoff
+    name: nrfcomm
+  draft: false
+  prerelease: auto
+  name_template: "{{ .Tag }}"
+  header: |
+    ## nrfcomm {{ .Tag }}
+
+    Install:
+    ```
+    go get github.com/ystepanoff/nrfcomm@{{ .Tag }}
+    ```
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
